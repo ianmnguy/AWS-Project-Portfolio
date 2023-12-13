@@ -233,3 +233,29 @@ The token has two purposes:
 *  To connect GitHub to CodePipeline, so whenever new code is committed to GitHub repo it automatically triggers pipeline execution.
 The token should have the scopes **repo** (to read the repository) and **admin:repo_hook** (if you plan to use webhooks, true by default) as shown in the image below.
 
+![Alt Text](https://community.aws/_next/image?url=https%3A%2F%2Fcommunity.aws%2Fraw-post-images%2Ftutorials%2Fusing-ec2-userdata-to-bootstrap-python-web-app%2Fimages%2FGitHub-repo-hooks.png&w=828&q=75)
+
+Now, for AWS CodePipeline to read from this GitHub repo, I had to configure the GitHub personal access token just created. This token should be stored as a plaintext secret (not a JSON secret) in AWS Secrets Manager under the exact name `github-oauth-token`. I used the following AWS Secrets command and description:
+```
+aws secretsmanager create-secret \ 
+  --name github-oauth-token \ 
+  --description "Github access token for cdk" \ 
+  --secret-string My_GITHUB_ACCESS_TOKEN \ 
+  --region us-east-1
+```
+
+**Additional Files for Testing and Deploying**
+
+To properly test and deploy the application, I needed to add some additional content to the sample repository forked. These files are used by the CodeBuild and CodeDeploy services. On top of that, I wrote a simple Python unit test. 
+All of these Test files are located in the repository under the `Tests` directory.
+
+To create the tests, in the root directory of the sample application create a `tests` directory, and add the `test_sample.py` file to it.
+This test will run the Flask application and see if it returns a `200` HTTP status code
+
+On top of this file, just for posterity, let's create a `__init__.py` file in the same directory.
+
+Next I was ready to create the `buildspec.yml file`. This file is used by CodeDeploy as an instruction set of what it needs to do to build your code. In our case, we are instructing it on how to run the tests.
+
+Finally, let's add some much needed files for CodeDeploy. Similarly to CodeBuild, CodeDeploy takes a file called `appspec.yml` as an instruction set on how to deploy your application to its final destination. On top of that file, we will be adding a few shell scripts to configure and launch the application on the server. This is needed as we need to create a specific `nginx` website, and do some service restarts. 
+Here I am involving 4 different scripts in different phases of the deployment. This is required to properly set up the EC2 instance before and after code deployment. These scripts should sit in a directory called scripts in the root of the sample application (located in the repository above as well)
+
