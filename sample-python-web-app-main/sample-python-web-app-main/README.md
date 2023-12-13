@@ -207,3 +207,29 @@ export class PythonEc2BlogpostStack extends cdk.Stack {
 
 
 ```
+Here is the user data bash script attaached to the EC2 Instance. This code sits in a file named `configure_amz_linux_sample_app.sh` in the `assets` directory in the root of the CDK Application.
+
+```Typescript
+#!/bin/bash -xe
+# Install OS packages
+yum update -y
+yum groupinstall -y "Development Tools"
+amazon-linux-extras install -y nginx1
+yum install -y nginx python3 python3-pip python3-devel ruby wget
+pip3 install pipenv wheel
+pip3 install uwsgi
+
+# Code Deploy Agent
+cd /home/ec2-user
+wget https://aws-codedeploy-us-west-2.s3.us-west-2.amazonaws.com/latest/install
+chmod +x ./install
+./install auto
+```
+**Connection to Github**
+
+To connect the Sample Application to our CDK I configured a Github Token to be used by the CI/CD Pipeline.
+The token has two purposes:
+*  To provide authentication to stage, commit, and push code from local repo to the GitHub repo. You may also use SSH keys for this.
+*  To connect GitHub to CodePipeline, so whenever new code is committed to GitHub repo it automatically triggers pipeline execution.
+The token should have the scopes **repo** (to read the repository) and **admin:repo_hook** (if you plan to use webhooks, true by default) as shown in the image below.
+
