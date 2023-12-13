@@ -1,11 +1,209 @@
-## Sample Python App
+## Bootstrapping an Amazon EC2 to run a Python Web App
 
-This is a basic Python application, used in a number of AWS tutorials, that focus on various ways to deploy it. It is a simple application that allows the user to sign up for a new startup.
+**Introduction**
 
-## Security
+Manually setting up and configuring the packages required to run a Python web app using Nginx and uWSGI on a server can be time consuming — and it's tough to accomplish without any errors. But why do that hard work when you can automate it? Using AWS CDK, we can set up user data scripts and an infrastructure to preconfigure an EC2 instance - which in turn will turn a manual, time-intensive process into a snap. In this tutorial, we will be using a combination of bash scripts and AWS CodeDeploy to install and configure Nginx and uWSGI, set up a systemd service for uWSGI, and copy our application using CDK. Then, we are going to deploy our Python-based web application from a GitHub repository.
 
-See [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications) for more information.
+To deploy this web application I used **AWS CDK** in **AWS Cloud9** to create and deploy the underlying infrastructure. The infrastructure consists of an EC2 instance, a VPC, CI/CD pipeline, and accompanying resources like Security Groups and IAM Permissions. 
 
-## License
+Using the `ec2-cdk directory`, all code was written into `lib/ec2-cdk-stack.ts` for the creation of the resource stack. 
+A resource stack is a set of cloud infrastructure resources (in your particular case, they will be all AWS resources) that will be provisioned into a specific account. The account and Region where these resources are provisioned can be configured in the stack
 
-This library is licensed under the MIT-0 License. See the LICENSE file.
+In the resource stack, I create the following resources:
+
+  * IAM roles: This role will be assigned to the EC2 instance to allow it to call other AWS services.
+  * EC2 instance: The virtual machine you will use to host your web application.
+  * Security group: The virtual firewall to allow inbound requests to your web application.
+  * Secrets manager secret: This is a place where you will store your Github Token that we will use to authenticate the pipeline to it.
+  * CI/CD Pipeline: This pipeline will consist of AWS CodePipeline, AWS CodeBuild, and AWS CodeDeploy.
+
+**Final Resource Stack**
+    
+```Typescript
+import * as cdk from 'aws-cdk-lib';
+import { readFileSync } from 'fs';
+import { Construct } from 'constructs';
+
+import { Vpc, SubnetType, Peer, Port, AmazonLinuxGeneration, 
+  AmazonLinuxCpuType, Instance, SecurityGroup, AmazonLinuxImage,
+  InstanceClass, InstanceSize, InstanceType
+} from 'aws-cdk-lib/aws-ec2';
+
+import { Role, ServicePrincipal, ManagedPolicy } from 'aws-cdk-lib/aws-iam';
+import { Pipeline, Artifact } from 'aws-cdk-lib/aws-codepipeline';
+import { GitHubSourceAction, CodeBuildAction, CodeDeployServerDeployAction } from 'aws-cdk-lib/aws-codepipeline-actions';
+import { PipelineProject, LinuxBuildImage } from 'aws-cdk-lib/aws-codebuild';
+import { ServerDeploymentGroup, ServerApplication, InstanceTagSet } from 'aws-cdk-lib/aws-codedeploy';
+import { SecretValue } from 'aws-cdk-lib';
+
+export class PythonEc2BlogpostStack extends cdk.Stack {
+  constructor(scope: Construct, id: string, props?: cdk.StackProps) {
+    super(scope, id, props);
+    // IAM
+    // Policy for CodeDeploy bucket access
+    // Role that will be attached to the EC2 instance so it can be 
+    // managed by AWS SSM
+    const webServerRole = new Role(this, "ec2Role", {
+      assumedBy: new ServicePrincipal("ec2.amazonaws.com"),
+    });
+
+    // IAM policy attachment to allow access to
+    webServerRole.addManagedPolicy(
+      ManagedPolicy.fromAwsManagedPolicyName("AmazonSSMManagedInstanceCore")
+    );
+    
+    webServerRole.addManagedPolicy(
+      ManagedPolicy.fromAwsManagedPolicyName("service-role/AmazonEC2RoleforAWSCodeDeploy")
+    );
+
+    // VPC
+    // This VPC has 3 public subnets, and that's it
+    const vpc = new Vpc(this, 'main_vpc',{
+      subnetConfiguration: [
+        {
+          cidrMask: 24,
+          name: 'pub01',
+          subnetType: SubnetType.PUBLIC,
+        },
+        {
+          cidrMask: 24,
+          name: 'pub02',
+          subnetType: SubnetType.PUBLIC,
+        },
+        {
+          cidrMask: 24,
+          name: 'pub03',
+          subnetType: SubnetType.PUBLIC,
+        }
+      ]
+    });
+
+    // Security Groups
+    // This SG will only allow HTTP traffic to the Web server
+    const webSg = new SecurityGroup(this, 'web_sg',{
+      vpc,
+      description: "Allows Inbound HTTP traffic to the web server.",
+      allowAllOutbound: true,
+    });
+    
+    webSg.addIngressRule(
+      Peer.anyIpv4(),
+      Port.tcp(80)
+    );
+    
+    // EC2 Instance
+    // This is the Python Web server that we will be using
+    // Get the latest AmazonLinux 2 AMI for the given region
+    const ami = new AmazonLinuxImage({
+      generation: AmazonLinuxGeneration.AMAZON_LINUX_2,
+      cpuType: AmazonLinuxCpuType.X86_64,
+    });
+
+    // The actual Web EC2 Instance for the web server
+    const webServer = new Instance(this, 'web_server',{
+      vpc,
+      instanceType: InstanceType.of(
+        InstanceClass.T3,
+        InstanceSize.MICRO,
+      ),
+      machineImage: ami,
+      securityGroup: webSg,
+      role: webServerRole,
+    });
+
+    // User data - used for bootstrapping
+    const webSGUserData = readFileSync('./assets/configure_amz_linux_sample_app.sh','utf-8');
+    webServer.addUserData(webSGUserData);
+    // Tag the instance
+    cdk.Tags.of(webServer).add('application-name','python-web')
+    cdk.Tags.of(webServer).add('stage','prod')
+    
+    // Pipeline stuff
+    // CodePipeline
+    const pipeline = new Pipeline(this, 'python_web_pipeline', {
+      pipelineName: 'python-webApp',
+      crossAccountKeys: false, // solves the encrypted bucket issue
+    });
+
+    // STAGES
+    // Source Stage
+    const sourceStage = pipeline.addStage({
+      stageName: 'Source',
+    });
+    
+    // Build Stage
+    const buildStage = pipeline.addStage({
+      stageName: 'Build',
+    });
+    
+    // Deploy Stage
+    const deployStage = pipeline.addStage({
+      stageName: 'Deploy',
+    });
+
+    // Add some action
+    // Source action
+    const sourceOutput = new Artifact();
+    const githubSourceAction = new GitHubSourceAction({
+      actionName: 'GithubSource',
+      oauthToken: SecretValue.secretsManager('github-oauth-token'), // SET UP BEFORE
+      owner: 'ianmnguy', 
+      repo: 'sample-python-web-app',
+      branch: 'main',
+      output: sourceOutput,
+    });
+
+    sourceStage.addAction(githubSourceAction);
+
+    // Build Action
+    const pythonTestProject = new PipelineProject(this, 'pythonTestProject', {
+      environment: {
+        buildImage: LinuxBuildImage.AMAZON_LINUX_2_3
+      }
+    });
+    
+    const pythonTestOutput = new Artifact();
+    const pythonTestAction = new CodeBuildAction({
+      actionName: 'TestPython',
+      project: pythonTestProject,
+      input: sourceOutput,
+      outputs: [pythonTestOutput]
+    });
+
+    buildStage.addAction(pythonTestAction);
+
+    // Deploy Actions
+    const pythonDeployApplication = new ServerApplication(this,"python_deploy_application", {
+      applicationName: 'python-webApp'
+    });
+
+    // Deployment group
+    const pythonServerDeploymentGroup = new ServerDeploymentGroup(this,'PythonAppDeployGroup', {
+      application: pythonDeployApplication,
+      deploymentGroupName: 'PythonAppDeploymentGroup',
+      installAgent: true,
+      ec2InstanceTags: new InstanceTagSet(
+      {
+        'application-name': ['python-web'],
+        'stage':['prod', 'stage']
+      })
+    });
+
+    // Deployment action
+    const pythonDeployAction = new CodeDeployServerDeployAction({
+      actionName: 'PythonAppDeployment',
+      input: sourceOutput,
+      deploymentGroup: pythonServerDeploymentGroup,
+    });
+
+    deployStage.addAction(pythonDeployAction);
+
+    // Output the public IP address of the EC2 instance
+    new cdk.CfnOutput(this, "IP Address", {
+      value: webServer.instancePublicIp,
+    });
+  }
+}
+
+
+```
