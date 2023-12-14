@@ -289,6 +289,28 @@ Confirming that I wanted to commit these changes, I entered `y` to continue depl
 
 Heading over to my Console, in the AWS CodePipeline console and finding my `python-webapp` I now see the Source, Build, and Deploy that initiated from CDK:
 
+![Alt Text](https://github.com/ianmnguy/AWS-Project-Portfolio/blob/main/sample-python-web-app-main/sample-python-web-app-main/Success%20deployment%20of%20pipeline.JPG?raw=true)
+
+![Alt Text](https://github.com/ianmnguy/AWS-Project-Portfolio/blob/main/sample-python-web-app-main/sample-python-web-app-main/python-webApp%20CodePipeline%20us-east-1-2.png?raw=true)
+
+Once all the stages turn `Green` I was able to use the provided IP address of the EC2 instance to access the sample application that was now up and running. 
+
+**Cleanup Resources**
+
+To not incur charges beyond AWS Free tier I used the following command to remove the infrastructure created:
+```
+cdk destroy
+
+# Enter y to approve the changes and delete any stack resources.
+PythonEc2BlogpostStack: destroying ...
+
+✅ PythonEc2BlogpostStack: destroyed
+```
+
+If we kept the resources active the cost would be $9.45 per month, or $0.0126 per hour.
+Last step was to remove the S3 bucket that CDK used to upload the scripts and sample application, S3 isnt deleted by CDK as a safety precaution. 
+
+
 
 
 
