@@ -287,4 +287,8 @@ Confirming that I wanted to commit these changes, I entered `y` to continue depl
 
 ![Alt Text](https://github.com/ianmnguy/AWS-Project-Portfolio/blob/main/sample-python-web-app-main/sample-python-web-app-main/Python-Web-App.JPG?raw=true)
 
+Heading over to my Console, in the AWS CodePipeline console and finding my `python-webapp` I now see the Source, Build, and Deploy that initiated from CDK:
+
+
+
 
