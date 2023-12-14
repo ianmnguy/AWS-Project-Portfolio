@@ -258,4 +258,33 @@ Next I was ready to create the `buildspec.yml file`. This file is used by CodeDe
 
 Finally, let's add some much needed files for CodeDeploy. Similarly to CodeBuild, CodeDeploy takes a file called `appspec.yml` as an instruction set on how to deploy your application to its final destination. On top of that file, we will be adding a few shell scripts to configure and launch the application on the server. This is needed as we need to create a specific `nginx` website, and do some service restarts. 
 Here I am involving 4 different scripts in different phases of the deployment. This is required to properly set up the EC2 instance before and after code deployment. These scripts should sit in a directory called scripts in the root of the sample application (located in the repository above as well)
+After these files are added and saved I made sure to add, commit, and push the changes to the sample code to this repository. 
+
+**Bootstrap CDK**
+Before deploying the CDK app, I had to configure CDK on the account I was deploying to. Edit the `bin/ec2-cdk.ts` and uncomment line 14:
+```
+env: { account: process.env.CDK_DEFAULT_ACCOUNT, region: process.env.CDK_DEFAULT_REGION },
+```
+This will use the account ID and Region configured in the AWS CLI.
+I also needed to bootstrap CDK in my account. This created the required infrastructure for CDK to manage infrastructure in my account.
+```
+cdk bootstrap
+
+#output
+⏳  Bootstrapping environment aws://AWS_ID/<us-east-1>...
+✅  Environment aws://AWS_ID/<us-east-1> bootstrapped
+Deploying the stack
+```
+Once verifying that the appropriate account was configured, I was ready to deploy using the following command
+```
+cdk deploy
+```
+I was presented with the following output and confirmation screen. Because there are security implications for our stack, I saw a summary of these and had to confirm them before deployment proceeds. This will always be shown if you are creating, modifying, or deleting any IAM policy, role, group, or user, and when you change any firewall rules.
+
+![Alt Text](https://community.aws/_next/image?url=https%3A%2F%2Fcommunity.aws%2Fraw-post-images%2Ftutorials%2Fusing-ec2-userdata-to-bootstrap-python-web-app%2Fimages%2Fdeployment.png&w=1080&q=75)
+
+Confirming that I wanted to commit these changes, I entered `y` to continue deployment and create the resources in the specified account. Below are the results listed in the CLI and the output defined in the CDK. 
+
+![Alt Text](https://github.com/ianmnguy/AWS-Project-Portfolio/blob/main/sample-python-web-app-main/sample-python-web-app-main/Python-Web-App.JPG?raw=true)
+
 
